@@ -18,6 +18,7 @@ fn main() {
         // The input header we would like to generate
         // bindings for.
         .header("shenango.h")
+        .blocklist_item("preempt_cnt")
         // Finish the builder and generate the bindings.
         .generate()
         // Unwrap the Result and panic on failure.

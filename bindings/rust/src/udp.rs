@@ -1,10 +1,15 @@
 use std::io::{self, Read, Write};
 use std::net::SocketAddrV4;
 use std::ptr;
+use std::convert::TryInto;
 
 use byteorder::{ByteOrder, NetworkEndian};
 
 use super::*;
+
+fn i64_to_result(i: i64) -> io::Result<usize> {
+    Ok(i.try_into().map_err(|_| io::Error::from_raw_os_error(i as i32))?)
+}
 
 fn isize_to_result(i: isize) -> io::Result<usize> {
     if i >= 0 {
@@ -57,11 +62,11 @@ impl UdpConnection {
 
     pub fn read_from(&self, buf: &mut [u8]) -> io::Result<(usize, SocketAddrV4)> {
         let mut raddr = ffi::netaddr { ip: 0, port: 0 };
-        isize_to_result(unsafe {
+        i64_to_result(unsafe {
             ffi::udp_read_from(
                 self.0,
                 buf.as_mut_ptr() as *mut c_void,
-                buf.len(),
+                buf.len() as u64,
                 &mut raddr as *mut _,
             )
         })
@@ -73,11 +78,11 @@ impl UdpConnection {
             ip: NetworkEndian::read_u32(&remote_addr.ip().octets()),
             port: remote_addr.port(),
         };
-        isize_to_result(unsafe {
+        i64_to_result(unsafe {
             ffi::udp_write_to(
                 self.0,
                 buf.as_ptr() as *const c_void as *mut c_void,
-                buf.len(),
+                buf.len() as u64,
                 &mut raddr as *mut _,
             )
         })
@@ -85,13 +90,13 @@ impl UdpConnection {
 
     /// Same as read, but doesn't take a &mut self.
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
-        isize_to_result(unsafe {
-            ffi::udp_read(self.0, buf.as_mut_ptr() as *mut c_void, buf.len())
+        i64_to_result(unsafe {
+            ffi::udp_read(self.0, buf.as_mut_ptr() as *mut c_void, buf.len() as u64)
         })
     }
     /// Same as write, but doesn't take a &mut self.
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
-        isize_to_result(unsafe { ffi::udp_write(self.0, buf.as_ptr() as *const c_void, buf.len()) })
+        i64_to_result(unsafe { ffi::udp_write(self.0, buf.as_ptr() as *const c_void, buf.len() as u64) })
     }
 
     pub fn local_addr(&self) -> SocketAddrV4 {
@@ -111,23 +116,23 @@ impl UdpConnection {
 
 impl Read for UdpConnection {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        isize_to_result(unsafe {
-            ffi::udp_read(self.0, buf.as_mut_ptr() as *mut c_void, buf.len())
+        i64_to_result(unsafe {
+            ffi::udp_read(self.0, buf.as_mut_ptr() as *mut c_void, buf.len() as u64)
         })
     }
 }
 
 impl<'a> Read for &'a UdpConnection {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        isize_to_result(unsafe {
-            ffi::udp_read(self.0, buf.as_mut_ptr() as *mut c_void, buf.len())
+        i64_to_result(unsafe {
+            ffi::udp_read(self.0, buf.as_mut_ptr() as *mut c_void, buf.len() as u64)
         })
     }
 }
 
 impl Write for UdpConnection {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        isize_to_result(unsafe { ffi::udp_write(self.0, buf.as_ptr() as *const c_void, buf.len()) })
+        i64_to_result(unsafe { ffi::udp_write(self.0, buf.as_ptr() as *const c_void, buf.len() as u64) })
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -137,7 +142,7 @@ impl Write for UdpConnection {
 
 impl<'a> Write for &'a UdpConnection {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        isize_to_result(unsafe { ffi::udp_write(self.0, buf.as_ptr() as *const c_void, buf.len()) })
+        i64_to_result(unsafe { ffi::udp_write(self.0, buf.as_ptr() as *const c_void, buf.len() as u64) })
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -177,9 +182,9 @@ impl UdpSpawner {
     }
 
     pub unsafe fn reply(d: *mut ffi::udp_spawn_data, buf: &[u8]) -> io::Result<usize> {
-        isize_to_result(ffi::udp_send(
+        i64_to_result(ffi::udp_send(
             buf.as_ptr() as *const c_void,
-            buf.len(),
+            buf.len() as u64,
             (*d).laddr,
             (*d).raddr,
         ))

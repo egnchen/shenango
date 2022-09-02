@@ -5,7 +5,7 @@ use std::os::raw::c_void;
 use std::ptr;
 
 const SAMPLES: u32 = 200000;
-const N: usize = (1 << 10);
+const N: usize = 1 << 10;
 const SIZE: usize = 256;
 
 fn malloc_bench(samples: u32, ptrs: &mut [*mut c_void]) {
@@ -24,7 +24,7 @@ fn malloc_bench(samples: u32, ptrs: &mut [*mut c_void]) {
 fn smalloc_bench(samples: u32, ptrs: &mut [*mut c_void]) {
     for _ in 0..samples {
         for i in 0..ptrs.len() {
-            ptrs[i] = unsafe { shenango::ffi::smalloc(SIZE) };
+            ptrs[i] = unsafe { shenango::ffi::smalloc(SIZE as u64) };
             assert!(!ptrs[i].is_null());
         }
 

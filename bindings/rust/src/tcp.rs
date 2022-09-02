@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::io::{self, Read, Write};
 use std::net::SocketAddrV4;
 use std::ptr;
@@ -5,6 +6,10 @@ use std::ptr;
 use byteorder::{ByteOrder, NetworkEndian};
 
 use super::*;
+
+fn i64_to_result(i: i64) -> io::Result<usize> {
+    Ok(i.try_into().map_err(|_| io::Error::from_raw_os_error(i as i32))?)
+}
 
 fn isize_to_result(i: isize) -> io::Result<usize> {
     if i >= 0 {
@@ -97,21 +102,21 @@ impl TcpConnection {
 
 impl<'a> Read for &'a TcpConnection {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        isize_to_result(unsafe {
-            ffi::tcp_read(self.0, buf.as_mut_ptr() as *mut c_void, buf.len())
+        i64_to_result(unsafe {
+            ffi::tcp_read(self.0, buf.as_mut_ptr() as *mut c_void, buf.len() as u64)
         })
     }
 }
 impl Read for TcpConnection {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        isize_to_result(unsafe {
-            ffi::tcp_read(self.0, buf.as_mut_ptr() as *mut c_void, buf.len())
+        i64_to_result(unsafe {
+            ffi::tcp_read(self.0, buf.as_mut_ptr() as *mut c_void, buf.len() as u64)
         })
     }
 }
 impl<'a> Write for &'a TcpConnection {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        isize_to_result(unsafe { ffi::tcp_write(self.0, buf.as_ptr() as *const c_void, buf.len()) })
+        i64_to_result(unsafe { ffi::tcp_write(self.0, buf.as_ptr() as *const c_void, buf.len() as u64) })
     }
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
@@ -119,7 +124,7 @@ impl<'a> Write for &'a TcpConnection {
 }
 impl Write for TcpConnection {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        isize_to_result(unsafe { ffi::tcp_write(self.0, buf.as_ptr() as *const c_void, buf.len()) })
+        i64_to_result(unsafe { ffi::tcp_write(self.0, buf.as_ptr() as *const c_void, buf.len() as u64) })
     }
     fn flush(&mut self) -> io::Result<()> {
         Ok(())

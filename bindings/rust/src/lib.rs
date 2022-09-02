@@ -1,7 +1,7 @@
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
-#![feature(llvm_asm)]
+// #![feature(llvm_asm)]
 #![feature(integer_atomics)]
 #![feature(thread_local)]
 #![feature(new_uninit)]
@@ -13,8 +13,8 @@ use std::cell::UnsafeCell;
 use std::ffi::CString;
 use std::mem;
 use std::os::raw::{c_int, c_void};
+use std::sync::atomic::{fence, AtomicI32, Ordering};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI32, Ordering};
 use std::time::Duration;
 
 pub mod ffi {
@@ -28,6 +28,11 @@ pub mod udp;
 
 pub use asm::*;
 
+extern "C" {
+    #[thread_local]
+    static mut preempt_cnt: c_int;
+}
+
 fn convert_error(ret: c_int) -> Result<(), i32> {
     if ret == 0 {
         Ok(())
@@ -39,9 +44,9 @@ fn convert_error(ret: c_int) -> Result<(), i32> {
 #[inline]
 pub fn preempt_enable() {
     unsafe {
-        llvm_asm!("" ::: "memory" : "volatile");
-        llvm_asm!("subl $$1, %fs:preempt_cnt@tpoff" : : : "memory", "cc" : "volatile");
-        if ffi::preempt_cnt == 0 {
+        fence(Ordering::Acquire);
+        preempt_cnt -= 1;
+        if preempt_cnt == 0 {
             ffi::preempt();
         }
     }
@@ -50,8 +55,8 @@ pub fn preempt_enable() {
 #[inline]
 pub fn preempt_disable() {
     unsafe {
-        llvm_asm!("addl $$1, %fs:preempt_cnt@tpoff" : : : "memory", "cc" : "volatile");
-        llvm_asm!("" ::: "memory" : "volatile");
+        preempt_cnt += 1;
+        fence(Ordering::Acquire);
     }
 }
 
@@ -139,14 +144,14 @@ impl SpinLock {
 
     #[inline]
     pub fn lock_np(&self) {
-	preempt_disable();
-	self.lock();
+        preempt_disable();
+        self.lock();
     }
 
     #[inline]
     pub fn unlock_np(&self) {
-	self.unlock();
-	preempt_enable();
+        self.unlock();
+        preempt_enable();
     }
 
     #[inline]
