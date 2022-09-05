@@ -2,14 +2,13 @@
  * mem.c - memory management
  */
 
-#include <asm/mman.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <numaif.h>
 #include <sys/types.h>
-#include <sys/syscall.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
 
@@ -18,6 +17,7 @@
 #include <base/log.h>
 #include <base/limits.h>
 
+// these definitions are in linux/mman.h & linux/shm.h
 #if !defined(MAP_HUGE_2MB) || !defined(MAP_HUGE_1GB)
 #warning "Your system does not support specifying MAP_HUGETLB page sizes"
 #endif
@@ -86,10 +86,13 @@ __mem_map_anom(void *base, size_t len, size_t pgsize,
 	default: /* fail on other sizes */
 		return MAP_FAILED;
 	}
+  log_info("calling mmap with flags: %d\n", flags);
 
 	addr = mmap(base, len, PROT_READ | PROT_WRITE, flags, -1, 0);
 	if (addr == MAP_FAILED)
 		return MAP_FAILED;
+
+  log_info("__mem_map_anom: mmap successful");
 
 	BUILD_ASSERT(sizeof(unsigned long) * 8 >= NNUMA);
 	if (mbind(addr, len, numa_policy, mask ? mask : NULL,

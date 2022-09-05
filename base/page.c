@@ -356,8 +356,10 @@ int page_init(void)
 	/* First reserve address-space for the page table. */
 	addr = mmap(NULL, LGPAGE_META_LEN * NNUMA + PGSIZE_2MB - 1, PROT_NONE,
 		    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (addr == MAP_FAILED)
+	if (addr == MAP_FAILED) {
+		log_info("page_init: mmap failed");
 		return -ENOMEM;
+	}
 
 	/* Align to the next 2MB boundary. */
 	addr = (void *)align_up((uintptr_t)addr, PGSIZE_2MB);
@@ -368,8 +370,10 @@ int page_init(void)
 		node->tbl = mem_map_anom(
 			(char *)addr + i * LGPAGE_META_LEN,
 			LGPAGE_META_NR_LGPAGES * PGSIZE_2MB, PGSIZE_2MB, i);
-		if (node->tbl == MAP_FAILED)
+		if (node->tbl == MAP_FAILED) {
+			log_info("page_init: failed to map NUMA-local large page %d", i);
 			return -ENOMEM;
+		}
 
 		spin_lock_init(&node->lock);
 		list_head_init(&node->pages);

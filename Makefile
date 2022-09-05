@@ -61,6 +61,7 @@ test_targets = $(basename $(test_src))
 DPDK_LIBS= -L$(DPDK_PATH)/build/lib
 DPDK_LIBS += -Wl,-whole-archive -lrte_pmd_e1000 -Wl,-no-whole-archive
 DPDK_LIBS += -Wl,-whole-archive -lrte_pmd_ixgbe -Wl,-no-whole-archive
+DPDK_LIBS += -Wl,-whole-archive -lrte_pmd_virtio -Wl,-no-whole-archive
 DPDK_LIBS += -Wl,-whole-archive -lrte_mempool_ring -Wl,-no-whole-archive
 DPDK_LIBS += -ldpdk
 DPDK_LIBS += -lrte_eal

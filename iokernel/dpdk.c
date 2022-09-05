@@ -51,17 +51,19 @@
 static const struct rte_eth_conf port_conf_default = {
 	.rxmode = {
 		.max_rx_pkt_len = ETH_MAX_LEN,
-		.offloads = DEV_RX_OFFLOAD_IPV4_CKSUM,
-		.mq_mode = ETH_MQ_RX_RSS | ETH_MQ_RX_RSS_FLAG,
+		// .offloads = DEV_RX_OFFLOAD_IPV4_CKSUM,
+		// .mq_mode = ETH_MQ_RX_RSS | ETH_MQ_RX_RSS_FLAG,
 	},
+  /*
 	.rx_adv_conf = {
 		.rss_conf = {
 			.rss_key = NULL,
-			.rss_hf = ETH_RSS_NONFRAG_IPV4_TCP | ETH_RSS_NONFRAG_IPV4_UDP,
+			// .rss_hf = ETH_RSS_NONFRAG_IPV4_TCP | ETH_RSS_NONFRAG_IPV4_UDP,
 		},
 	},
+  */
 	.txmode = {
-		.offloads = DEV_TX_OFFLOAD_IPV4_CKSUM | DEV_TX_OFFLOAD_UDP_CKSUM | DEV_TX_OFFLOAD_TCP_CKSUM,
+		// .offloads = DEV_TX_OFFLOAD_IPV4_CKSUM | DEV_TX_OFFLOAD_UDP_CKSUM | DEV_TX_OFFLOAD_TCP_CKSUM,
 	},
 };
 
@@ -169,10 +171,10 @@ int dpdk_init()
 	char *argv[4];
 	char buf[10];
 
-	/* init args */
+  // init args
 	argv[0] = "./iokerneld";
 	argv[1] = "-l";
-	/* use our assigned core */
+  // use our assigned cores
 	sprintf(buf, "%d", core_assign.dp_core);
 	argv[2] = buf;
 	argv[3] = "--socket-mem=128";
@@ -183,6 +185,8 @@ int dpdk_init()
 		log_err("dpdk: error with EAL initialization");
 		return -1;
 	}
+
+  log_info("dpdk avail/total: %d/%d", rte_eth_dev_count_avail(), rte_eth_dev_count_total());
 
 	/* check that there is a port to send/receive on */
 	if (!rte_eth_dev_is_valid_port(0)) {
