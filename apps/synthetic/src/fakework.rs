@@ -2,6 +2,7 @@ extern crate test;
 
 use std::result::Result;
 use std::sync::Arc;
+use std::time::Instant;
 
 extern crate mersenne_twister;
 extern crate rand;
@@ -49,6 +50,7 @@ impl FakeWorker {
     }
 
     pub fn work(&self, iters: u64) {
+        println!("{:?} Performing fake work", Instant::now());
         match *self {
             FakeWorker::Sqrt => {
                 let k = 2350845.545;

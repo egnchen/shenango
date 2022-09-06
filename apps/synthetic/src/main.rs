@@ -1,5 +1,4 @@
 #![feature(integer_atomics)]
-#![feature(nll)]
 #![feature(test)]
 #[macro_use]
 extern crate clap;
@@ -152,6 +151,7 @@ fn run_linux_udp_server(backend: Backend, addr: SocketAddrV4, nthreads: usize, w
         .map(|_| {
             let worker = worker.clone();
             backend.spawn_thread(move || {
+                println!("Bounding to address{}...", addr);
                 let socket = backend.create_udp_connection(addr, None).unwrap();
                 println!("Bound to address {}", socket.local_addr());
                 let mut buf = vec![0; 4096];

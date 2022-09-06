@@ -10,6 +10,9 @@ SPARSE	= sparse
 # MLX5=$(shell lspci | grep 'ConnectX-5' || echo "")
 MLX4=$(shell lspci | grep 'ConnectX-3' || echo "")
 
+# comment out to use checksum offload
+CFLAGS += -DNO_IP_CHKSUM_OFFLOAD
+
 CHECKFLAGS = -D__CHECKER__ -Waddress-space
 
 ifneq ($(DEBUG),)

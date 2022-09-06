@@ -1,6 +1,9 @@
 #!/bin/bash
+if [ "$EUID" -ne 0 ]; then
+	echo "Please run with sudo"
+	exit
+fi
 
-# run with sudo
 sysctl -w kernel.shm_rmid_forced=1
 sysctl -w kernel.shmmax=18446744073692774399
 sysctl -w vm.hugetlb_shm_group=27
@@ -15,4 +18,9 @@ for n in /sys/devices/system/node/node[1-9]; do
 	fi
 done
 
-
+echo "Binding nic"
+ip link set enp6s0 down
+modprobe uio
+insmod ./dpdk/build/kmod/igb_uio.ko
+python3 ./dpdk/usertools/dpdk-devbind.py -b igb_uio 06:00.0
+python3 ./dpdk/usertools/dpdk-devbind.py -s

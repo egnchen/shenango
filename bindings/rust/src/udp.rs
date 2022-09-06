@@ -1,14 +1,15 @@
+use std::convert::TryInto;
 use std::io::{self, Read, Write};
 use std::net::SocketAddrV4;
 use std::ptr;
-use std::convert::TryInto;
 
 use byteorder::{ByteOrder, NetworkEndian};
 
 use super::*;
 
 fn i64_to_result(i: i64) -> io::Result<usize> {
-    Ok(i.try_into().map_err(|_| io::Error::from_raw_os_error(i as i32))?)
+    Ok(i.try_into()
+        .map_err(|_| io::Error::from_raw_os_error(i as i32))?)
 }
 
 fn isize_to_result(i: isize) -> io::Result<usize> {
@@ -96,7 +97,9 @@ impl UdpConnection {
     }
     /// Same as write, but doesn't take a &mut self.
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
-        i64_to_result(unsafe { ffi::udp_write(self.0, buf.as_ptr() as *const c_void, buf.len() as u64) })
+        i64_to_result(unsafe {
+            ffi::udp_write(self.0, buf.as_ptr() as *const c_void, buf.len() as u64)
+        })
     }
 
     pub fn local_addr(&self) -> SocketAddrV4 {
@@ -132,7 +135,9 @@ impl<'a> Read for &'a UdpConnection {
 
 impl Write for UdpConnection {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        i64_to_result(unsafe { ffi::udp_write(self.0, buf.as_ptr() as *const c_void, buf.len() as u64) })
+        i64_to_result(unsafe {
+            ffi::udp_write(self.0, buf.as_ptr() as *const c_void, buf.len() as u64)
+        })
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -142,7 +147,9 @@ impl Write for UdpConnection {
 
 impl<'a> Write for &'a UdpConnection {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        i64_to_result(unsafe { ffi::udp_write(self.0, buf.as_ptr() as *const c_void, buf.len() as u64) })
+        i64_to_result(unsafe {
+            ffi::udp_write(self.0, buf.as_ptr() as *const c_void, buf.len() as u64)
+        })
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -165,7 +172,10 @@ impl UdpSpawner {
         local_addr: SocketAddrV4,
         f: extern "C" fn(*mut ffi::udp_spawn_data),
     ) -> io::Result<Self> {
-        println!("{:?}", local_addr);
+        println!(
+            "Spawning shenango-based udp server, local address: {:?}",
+            local_addr
+        );
         let laddr = ffi::netaddr {
             ip: NetworkEndian::read_u32(&local_addr.ip().octets()),
             port: local_addr.port(),

@@ -376,6 +376,11 @@ static void net_push_iphdr(struct mbuf *m, uint8_t proto, uint32_t daddr)
 	iphdr->chksum = 0;
 	iphdr->saddr = hton32(netcfg.addr);
 	iphdr->daddr = hton32(daddr);
+  iphdr->chksum = 0;
+#ifdef NO_IP_CHKSUM_OFFLOAD
+  #warning "ip checksum disabled"
+  iphdr->chksum = chksum_internet(iphdr, sizeof(*iphdr));
+#endif
 }
 
 static uint32_t net_get_ip_route(uint32_t daddr)
@@ -403,30 +408,37 @@ static uint32_t net_get_ip_route(uint32_t daddr)
 int net_tx_ip(struct mbuf *m, uint8_t proto, uint32_t daddr)
 {
 	struct eth_addr dhost;
+  static __thread int counter = 0;
 	int ret;
 
 	/* prepend the IP header */
 	net_push_iphdr(m, proto, daddr);
 
 	/* ask NIC to calculate IP checksum */
-	m->txflags |= OLFLAG_IP_CHKSUM | OLFLAG_IPV4;
+#ifndef NO_IP_CHKSUM_OFFLOAD
+	m->txflags |= OLFLAG_IP_CHKSUM;
+#endif
+  m->txflags |= OLFLAG_IPV4;
 
 	/* apply IP routing */
 	daddr = net_get_ip_route(daddr);
 
-	/* need to use ARP to resolve dhost */
+  // use ARP to resolve host
 	ret = arp_lookup(daddr, &dhost, m);
 	if (unlikely(ret)) {
 		if (ret == -EINPROGRESS) {
-			/* ARP code now owns the mbuf */
+      // ARP code now owns the mbuf
 			return 0;
 		} else {
-			/* An unrecoverable error occurred */
+      // unrecoverable error
 			mbuf_pull_hdr(m, struct ip_hdr);
 			return ret;
 		}
 	}
-
+  if(++counter == 1000) {
+    counter = 0;
+    // log_info("Sent 1000 packets");
+  }
 	ret = net_tx_eth(m, ETHTYPE_IP, dhost);
 	assert(!ret); /* can't fail as implemented so far */
 	return 0;
@@ -462,7 +474,10 @@ int net_tx_ip_burst(struct mbuf **ms, int n, uint8_t proto, uint32_t daddr)
 		net_push_iphdr(ms[i], proto, daddr);
 
 		/* ask NIC to calculate IP checksum */
-		ms[i]->txflags |= OLFLAG_IP_CHKSUM | OLFLAG_IPV4;
+#ifndef NO_IP_CHKSUM_OFFLOAD
+		ms[i]->txflags |= OLFLAG_IPV4;
+#endif
+    ms[i]->txflags |= OLFLAG_IP_CHKSUM ;
 	}
 
 	/* apply IP routing */
