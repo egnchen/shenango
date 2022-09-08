@@ -2,6 +2,7 @@
 #include <dlfcn.h>
 #include <pthread.h>
 
+#include <base/log.h>
 #include <runtime/sync.h>
 
 BUILD_ASSERT(sizeof(pthread_barrier_t) >= sizeof(barrier_t));
@@ -10,6 +11,30 @@ BUILD_ASSERT(sizeof(pthread_spinlock_t) >= sizeof(spinlock_t));
 BUILD_ASSERT(sizeof(pthread_cond_t) >= sizeof(condvar_t));
 BUILD_ASSERT(sizeof(pthread_rwlock_t) >= sizeof(rwmutex_t));
 
+#ifdef SHIM_DEBUG
+#define DEBUG_PRINT(fmt, ...) log_info(fmt, __VA_ARGS__)
+#else
+#define DEBUG_PRINT(fmt, ...)
+#endif
+
+// modified to provide binary compatibility with pthread mutex
+static void mutex_check(pthread_mutex_t *mutex)
+{
+	if(unlikely(((mutex_t *)mutex)->waiters.n.next == NULL)) {
+		DEBUG_PRINT("Init pthread_mutex to shenango mutex %p", mutex);
+		mutex_init((mutex_t *)mutex);
+	}
+}
+
+// modified to provide binary compatibility with pthread cond var
+static void cond_check(pthread_cond_t *cond)
+{
+	if(unlikely(((condvar_t *)cond)->waiters.n.next == NULL)) {
+		DEBUG_PRINT("Init pthread_cond to shenango cond %p", cond);
+		condvar_init((condvar_t *)cond);
+	}
+}
+
 int pthread_mutex_init(pthread_mutex_t *mutex,
 		       const pthread_mutexattr_t *mutexattr)
 {
@@ -17,19 +42,26 @@ int pthread_mutex_init(pthread_mutex_t *mutex,
 	return 0;
 }
 
+
 int pthread_mutex_lock(pthread_mutex_t *mutex)
 {
+	mutex_check(mutex);
+	DEBUG_PRINT("Locking %p", mutex);
 	mutex_lock((mutex_t *)mutex);
 	return 0;
 }
 
 int pthread_mutex_trylock(pthread_mutex_t *mutex)
 {
+	mutex_check(mutex);
+	DEBUG_PRINT("Try locking %p", mutex);
 	return mutex_try_lock((mutex_t *)mutex) ? 0 : EBUSY;
 }
 
 int pthread_mutex_unlock(pthread_mutex_t *mutex)
 {
+	mutex_check(mutex);
+	DEBUG_PRINT("Unlocking %p", mutex);
 	mutex_unlock((mutex_t *)mutex);
 	return 0;
 }
@@ -109,24 +141,30 @@ int pthread_spin_unlock(pthread_spinlock_t *lock)
 int pthread_cond_init(pthread_cond_t *__restrict cond,
 		      const pthread_condattr_t *__restrict cond_attr)
 {
+	cond_check(cond);
 	condvar_init((condvar_t *)cond);
 	return 0;
 }
 
 int pthread_cond_signal(pthread_cond_t *cond)
 {
+	cond_check(cond);
 	condvar_signal((condvar_t *)cond);
 	return 0;
 }
 
 int pthread_cond_broadcast(pthread_cond_t *cond)
 {
+	cond_check(cond);
 	condvar_broadcast((condvar_t *)cond);
 	return 0;
 }
 
 int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
 {
+	mutex_check(mutex);
+	cond_check(cond);
+	DEBUG_PRINT("Cond wait mutex %p", mutex);
 	condvar_wait((condvar_t *)cond, (mutex_t *)mutex);
 	return 0;
 }
