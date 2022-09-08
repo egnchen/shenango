@@ -1,6 +1,6 @@
 INC     = -I../inc
-CFLAGS  = -g -Wall -std=gnu11 -D_GNU_SOURCE $(INC) -mssse3
-LDFLAGS = -T../base/base.ld -no-pie
+CFLAGS  = -g -Wall -std=gnu11 -D_GNU_SOURCE $(INC) -mssse3 -fPIC
+LDFLAGS = -shared -no-pie
 LD	= gcc
 CC	= gcc
 AR	= ar
@@ -15,15 +15,15 @@ endif
 # handy for debugging
 print-%  : ; @echo $* = $($*)
 
-# libshim.a - the shenango shim library
+# libshim.so - the shenango shim library
 shim_src = $(wildcard *.c)
 shim_obj = $(shim_src:.c=.o)
 
 # must be first
-all: libshim.a
+all: libshim.so
 
-libshim.a: $(shim_obj)
-	$(AR) rcs $@ $^
+libshim.so: $(shim_obj)
+	$(LD) -T../base/base.ld $(LDFLAGS) $^ ../libruntime.a ../libnet.a ../libbase.a -ldl -o $@ 
 
 # general build rules for all targets
 src = $(shim_src)
@@ -43,4 +43,4 @@ endif
 
 .PHONY: clean
 clean:
-	rm -f $(obj) $(dep) libshim.a
+	rm -f $(obj) $(dep) libshim.so
