@@ -1,0 +1,60 @@
+diff --git a/kernel/linux/igb_uio/Makefile b/kernel/linux/igb_uio/Makefile
+index f83bcc7c69..4c69f5d7ef 100644
+--- a/kernel/linux/igb_uio/Makefile
++++ b/kernel/linux/igb_uio/Makefile
+@@ -14,7 +14,7 @@ MODULE_PATH = drivers/net/igb_uio
+ #
+ MODULE_CFLAGS += -I$(SRCDIR) --param max-inline-insns-single=100
+ MODULE_CFLAGS += -I$(RTE_OUTPUT)/include
+-MODULE_CFLAGS += -Winline -Wall -Werror
++MODULE_CFLAGS += -Winline -Wall
+ MODULE_CFLAGS += -include $(RTE_OUTPUT)/include/rte_config.h
+ 
+ #
+diff --git a/kernel/linux/kni/compat.h b/kernel/linux/kni/compat.h
+index 7109474ec5..107faf6856 100644
+--- a/kernel/linux/kni/compat.h
++++ b/kernel/linux/kni/compat.h
+@@ -130,3 +130,9 @@
+ #if KERNEL_VERSION(4, 10, 0) <= LINUX_VERSION_CODE
+ #define HAVE_IOVA_TO_KVA_MAPPING_SUPPORT
+ #endif
++
++// patch: fix build with Linux 5.9
++// https://patches.dpdk.org/project/dpdk/patch/20200817103247.1564204-1-ferruh.yigit@intel.com/
++#if KERNEL_VERSION(5, 9, 0) > LINUX_VERSION_CODE
++#define HAVE_TSK_IN_GUP
++#endif
+\ No newline at end of file
+diff --git a/kernel/linux/kni/kni_dev.h b/kernel/linux/kni/kni_dev.h
+index 5e75c6371f..91e1ef8118 100644
+--- a/kernel/linux/kni/kni_dev.h
++++ b/kernel/linux/kni/kni_dev.h
+@@ -101,8 +101,13 @@ static inline phys_addr_t iova_to_phys(struct task_struct *tsk,
+ 	offset = iova & (PAGE_SIZE - 1);
+ 
+ 	/* Read one page struct info */
+-	ret = get_user_pages_remote(tsk, tsk->mm, iova, 1,
++#ifdef HAVE_TSK_IN_GUP
++ 	ret = get_user_pages_remote(tsk, tsk->mm, iova, 1,
++ 				    FOLL_TOUCH, &page, NULL, NULL);
++#else
++	ret = get_user_pages_remote(tsk->mm, iova, 1,
+ 				    FOLL_TOUCH, &page, NULL, NULL);
++#endif
+ 	if (ret < 0)
+ 		return 0;
+ 
+diff --git a/kernel/linux/kni/kni_net.c b/kernel/linux/kni/kni_net.c
+index 1ba9b1b99f..f77459cd7b 100644
+--- a/kernel/linux/kni/kni_net.c
++++ b/kernel/linux/kni/kni_net.c
+@@ -624,7 +624,7 @@ kni_net_rx(struct kni_dev *kni)
+  * Deal with a transmit timeout.
+  */
+ static void
+-kni_net_tx_timeout(struct net_device *dev)
++kni_net_tx_timeout(struct net_device *dev, unsigned int __compat)
+ {
+ 	pr_debug("Transmit timeout at %ld, latency %ld\n", jiffies,
+ 			jiffies - dev_trans_start(dev));
