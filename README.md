@@ -67,3 +67,18 @@ should install the Mellanox OFED as described in [DPDK's
 documentation](https://doc.dpdk.org/guides/nics/mlx4.html). If you use
 Intel NICs, you should insert the IGB UIO module and bind your NIC
 interface to it (e.g., using the script `./dpdk/usertools/dpdk-setup.sh`).
+
+## Notes on BPF
+
+You'll need `libelf`, `zlib` and `gcc-multilib` for compilation to work, along with other bpf tools.
+
+You need to generate `vmlinux.h` under project root. To do that use `bpftool btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h`.
+
+You need to compile libbpf and install those headers. To do that:
+
+```bash
+cd libbpf
+mkdir build
+cd build
+make -C ../src DESTDIR=$(pwd) INCLUDEDIR= LIBDIR= UAPIDIR= install
+```

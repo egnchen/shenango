@@ -1,9 +1,15 @@
 DPDK_PATH = dpdk
-INC     = -I./inc -I$(DPDK_PATH)/build/include
+LIBBPF_INC = -Ilibbpf/build -Ilibbpf/include/uapi
+INC     = -I./inc -I$(DPDK_PATH)/build/include $(LIBBPF_INC)
 CFLAGS  = -g -Wall -std=gnu11 -D_GNU_SOURCE $(INC) -mssse3
 LDFLAGS = -T base/base.ld -no-pie
 LD	= gcc
 CC	= gcc
+CLANG ?= clang
+LLVM_STRIP ?= llvm-strip
+BPF_CFLAGS = -g -O2 -Wall -DBPF_FIRST
+BPF_INC	= $(LIBBPF_INC) -I./inc
+ARCH = x86
 AR	= ar
 SPARSE	= sparse
 # uncomment to autodetect MLX5
@@ -83,6 +89,10 @@ ifneq ($(MLX4),)
 DPDK_LIBS += -lrte_pmd_mlx4 -libverbs -lmlx4
 endif
 endif
+DPDK_LIBS += -lpthread -lnuma -ldl
+
+# libbpf
+BPF_LIBS := $(abspath ./libbpf/src/libbpf.a) -lelf -lz
 
 # must be first
 all: libbase.a libnet.a libruntime.a iokerneld iokerneld-noht $(test_targets)
@@ -97,15 +107,13 @@ libruntime.a: $(runtime_obj)
 	$(AR) rcs $@ $^
 
 iokerneld: $(iokernel_obj) libbase.a libnet.a base/base.ld
-	$(LD) $(LDFLAGS) -o $@ $(iokernel_obj) libbase.a libnet.a $(DPDK_LIBS) \
-	-lpthread -lnuma -ldl
+	$(LD) $(LDFLAGS) -o $@ $(iokernel_obj) libbase.a libnet.a $(DPDK_LIBS) $(BPF_LIBS)
 
 iokerneld-noht: $(iokernel_noht_obj) libbase.a libnet.a base/base.ld
-	$(LD) $(LDFLAGS) -o $@ $(iokernel_noht_obj) libbase.a libnet.a $(DPDK_LIBS) \
-	 -lpthread -lnuma -ldl
+	$(LD) $(LDFLAGS) -o $@ $(iokernel_noht_obj) libbase.a libnet.a $(DPDK_LIBS) $(BPF_LIBS)
 
 $(test_targets): $(test_obj) libbase.a libruntime.a libnet.a base/base.ld
-	$(LD) $(LDFLAGS) -o $@ $@.o libruntime.a libnet.a libbase.a -lpthread
+	$(LD) $(LDFLAGS) -o $@ $@.o libruntime.a libnet.a libbase.a $(BPF_LIBS) -lpthread
 
 # general build rules for all targets
 src = $(base_src) $(net_src) $(runtime_src) $(iokernel_src) $(test_src)
@@ -116,6 +124,11 @@ dep = $(obj:.o=.d)
 ifneq ($(MAKECMDGOALS),clean)
 -include $(dep)   # include all dep files in the makefile
 endif
+
+# generate bpf files
+%.bpf.o: %.bpf.c
+	$(CLANG) $(BPF_CFLAGS) -target bpf -D__TARGET_ARCH_$(ARCH) $(BPF_INC) -c $< -o $@ && \
+	$(LLVM_STRIP) -g $@
 
 # rule to generate a dep file by using the C preprocessor
 # (see man cpp for details on the -MM and -MT options)

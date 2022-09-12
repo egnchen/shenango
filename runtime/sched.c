@@ -22,9 +22,9 @@
 /* the current running thread, or NULL if there isn't one */
 __thread thread_t *__self;
 /* a pointer to the top of the per-kthread (TLS) runtime stack */
-static __thread void *runtime_stack;
+__thread void *runtime_stack;
 /* a pointer to the bottom of the per-kthread (TLS) runtime stack */
-static __thread void *runtime_stack_base;
+__thread void *runtime_stack_base;
 
 /* Flag to prevent watchdog from running */
 bool disable_watchdog;
@@ -500,7 +500,7 @@ void thread_ready(thread_t *th)
 	putk();
 }
 
-static void thread_finish_yield_kthread(void)
+void thread_finish_yield_kthread(void)
 {
 	struct kthread *k = myk();
 	thread_t *myth = thread_self();

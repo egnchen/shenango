@@ -86,13 +86,10 @@ __mem_map_anom(void *base, size_t len, size_t pgsize,
 	default: /* fail on other sizes */
 		return MAP_FAILED;
 	}
-  log_info("calling mmap with flags: %d\n", flags);
-
+	
 	addr = mmap(base, len, PROT_READ | PROT_WRITE, flags, -1, 0);
 	if (addr == MAP_FAILED)
 		return MAP_FAILED;
-
-  log_info("__mem_map_anom: mmap successful");
 
 	BUILD_ASSERT(sizeof(unsigned long) * 8 >= NNUMA);
 	if (mbind(addr, len, numa_policy, mask ? mask : NULL,

@@ -5,9 +5,9 @@
 #include <signal.h>
 #include <string.h>
 
-#include "base/log.h"
-#include "runtime/thread.h"
-#include "runtime/preempt.h"
+#include <base/log.h>
+#include <runtime/thread.h>
+#include <runtime/preempt.h>
 
 #include "defs.h"
 
