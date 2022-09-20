@@ -9,7 +9,7 @@ To compile memcached with shenango shim layer:
 * `./configure`
 * Change the following lines in `Makefile`:
     * `LDFLAGS = -Wl,--wrap=main`
-    * `LIBS = ../libshim.a ../../libruntime.a ../../libnet.a ../../libbase.a -T../../base/base.ld -no-pie -levent -ldl`
+    * `LIBS = ../libshim.a ../../libruntime.a ../../libnet.a ../../libbase.a ../../libbpf/src/libbpf.a -T../../base/base.ld -no-pie -levent -ldl -lelf -lz`
 
 
 `-no-pie` is important here, otherwise you may encounter SEGFAULT when trying to access green thread's TLS variables.

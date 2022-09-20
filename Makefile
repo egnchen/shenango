@@ -22,7 +22,7 @@ CFLAGS += -DNO_IP_CHKSUM_OFFLOAD
 CHECKFLAGS = -D__CHECKER__ -Waddress-space
 
 ifneq ($(DEBUG),)
-CFLAGS += -DDEBUG -DCCAN_LIST_DEBUG -rdynamic -O0 -ggdb
+CFLAGS += -DDEBUG -DCCAN_LIST_DEBUG -rdynamic -fno-inline -O0 -ggdb
 LDFLAGS += -rdynamic
 else
 CFLAGS += -DNDEBUG -O3

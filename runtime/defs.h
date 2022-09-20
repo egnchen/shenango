@@ -96,7 +96,8 @@ struct thread {
 	struct thread_tf	tf;
 	struct list_node	link;
 	struct stack		*stack;
-	unsigned int		main_thread:1;
+	unsigned int		main_thread;
+	unsigned int		return_from_kernel;
 	unsigned int		state;
 	unsigned int		stack_busy;
 };
@@ -161,52 +162,6 @@ static inline void assert_rsp_aligned(uint64_t rsp)
 	 */
 	assert(rsp % RSP_ALIGNMENT == sizeof(void *));
 }
-
-/**
- * stack_init_to_rsp - sets up an exit handler and returns the top of the stack
- * @s: the stack to initialize
- * @exit_fn: exit handler that is called when the top of the call stack returns
- *
- * Returns the top of the stack as a stack pointer.
- */
-static inline uint64_t stack_init_to_rsp(struct stack *s, void (*exit_fn)(void))
-{
-	uint64_t rsp;
-
-	s->usable[STACK_PTR_SIZE - 1] = (uintptr_t)exit_fn;
-	rsp = (uint64_t)&s->usable[STACK_PTR_SIZE - 1];
-	assert_rsp_aligned(rsp);
-	return rsp;
-}
-
-/**
- * stack_init_to_rsp_with_buf - sets up an exit handler and returns the top of
- * the stack, reserving space for a buffer above
- * @s: the stack to initialize
- * @buf: a pointer to store the buffer pointer
- * @buf_len: the length of the buffer to reserve
- * @exit_fn: exit handler that is called when the top of the call stack returns
- *
- * Returns the top of the stack as a stack pointer.
- */
-static inline uint64_t
-stack_init_to_rsp_with_buf(struct stack *s, void **buf, size_t buf_len,
-			   void (*exit_fn)(void))
-{
-	uint64_t rsp, pos = STACK_PTR_SIZE;
-
-	/* reserve the buffer */
-	pos -= div_up(buf_len, sizeof(uint64_t));
-	pos = align_down(pos, RSP_ALIGNMENT / sizeof(uint64_t));
-	*buf = (void *)&s->usable[pos];
-
-	/* setup for usage as stack */
-	s->usable[--pos] = (uintptr_t)exit_fn;
-	rsp = (uint64_t)&s->usable[pos];
-	assert_rsp_aligned(rsp);
-	return rsp;
-}
-
 /*
  * ioqueues
  */
@@ -251,6 +206,8 @@ enum {
 	STAT_PREEMPTIONS,
 	STAT_PREEMPTIONS_STOLEN,
 	STAT_CORE_MIGRATIONS,
+	STAT_SWITCH_TIME_EBPF,
+	STAT_SWITCH_COUNT_EBPF,
 
 	/* network stack counters */
 	STAT_RX_BYTES,

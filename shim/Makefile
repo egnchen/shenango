@@ -1,5 +1,5 @@
 INC     = -I../inc
-CFLAGS  = -g -Wall -std=gnu11 -D_GNU_SOURCE $(INC) -mssse3
+CFLAGS  = -g -Wall -std=gnu11 -D_GNU_SOURCE $(INC) -mssse3 -Wno-unused-result
 LDFLAGS = -T../base/base.ld -no-pie
 LD	= gcc
 CC	= gcc

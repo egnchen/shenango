@@ -74,7 +74,8 @@ struct thread {
 	struct thread_tf	tf;
 	struct list_node	link;
 	struct stack		*stack;
-	unsigned int		main_thread:1;
+	unsigned int		main_thread;
+	unsigned int		return_from_kernel;
 	unsigned int		state;
 	unsigned int		stack_busy;
 };
@@ -82,6 +83,15 @@ struct thread {
 
 struct thread_bpf_ctx {
 	struct thread **current_thread_ptr;
+	unsigned int *preempt_cnt_ptr;
 	void *runtime_stack;
 	void *runtime_fn;
+};
+
+// per-process bpf configuration
+struct process_bpf_ctx {
+	// cache region
+	// pages within this range will be handled by kernel whatsoever
+	void *cache_start;
+	uint64_t cache_len;
 };

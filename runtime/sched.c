@@ -17,7 +17,9 @@
 #include <runtime/sync.h>
 #include <runtime/thread.h>
 
+#include "asm/ops.h"
 #include "defs.h"
+#include "runtime/preempt.h"
 
 /* the current running thread, or NULL if there isn't one */
 __thread thread_t *__self;
@@ -36,6 +38,7 @@ static DEFINE_PERTHREAD(struct tcache_perthread, thread_pt);
 
 /* used to track cycle usage in scheduler */
 static __thread uint64_t last_tsc;
+static __thread volatile uint64_t last_cycle;
 /* used to force timer and network processing after a timeout */
 static __thread uint64_t last_watchdog_tsc;
 
@@ -331,6 +334,7 @@ done:
 	assert((l->rcu_gen & 0x1) == 0x1);
 
 	/* and jump into the next thread */
+	last_cycle = rdtsc();
 	jmp_thread(th);
 }
 
@@ -509,7 +513,12 @@ void thread_finish_yield_kthread(void)
 	myth->state = THREAD_STATE_SLEEPING;
 	thread_ready(myth);
 
-	STAT(PROGRAM_CYCLES) += rdtsc() - last_tsc;
+	if(myth->return_from_kernel) {
+		uint64_t cycle = rdtsc();
+		STAT(SWITCH_TIME_EBPF) += cycle - last_cycle;
+		STAT(SWITCH_COUNT_EBPF) += 1;
+	}
+	myth->return_from_kernel = 0;
 
 	store_release(&k->rcu_gen, k->rcu_gen + 1);
 	spin_lock(&k->lock);
@@ -557,6 +566,50 @@ static __always_inline thread_t *__thread_create(void)
 
 	return th;
 }
+/**
+ * stack_init_to_rsp - sets up an exit handler and returns the top of the stack
+ * @s: the stack to initialize
+ * @exit_fn: exit handler that is called when the top of the call stack returns
+ *
+ * Returns the top of the stack as a stack pointer.
+ */
+static uint64_t stack_init_to_rsp(struct stack *s, void (*exit_fn)(void))
+{
+	uint64_t rsp;
+
+	s->usable[STACK_PTR_SIZE - 1] = (uintptr_t)exit_fn;
+	rsp = (uint64_t)&s->usable[STACK_PTR_SIZE - 1];
+	assert_rsp_aligned(rsp);
+	return rsp;
+}
+
+/**
+ * stack_init_to_rsp_with_buf - sets up an exit handler and returns the top of
+ * the stack, reserving space for a buffer above
+ * @s: the stack to initialize
+ * @buf: a pointer to store the buffer pointer
+ * @buf_len: the length of the buffer to reserve
+ * @exit_fn: exit handler that is called when the top of the call stack returns
+ *
+ * Returns the top of the stack as a stack pointer.
+ */
+static uint64_t stack_init_to_rsp_with_buf(struct stack *s, void **buf, size_t buf_len,
+			   void (*exit_fn)(void))
+{
+	uint64_t rsp, pos = STACK_PTR_SIZE;
+
+	/* reserve the buffer */
+	pos -= div_up(buf_len, sizeof(uint64_t));
+	pos = align_down(pos, RSP_ALIGNMENT / sizeof(uint64_t));
+	*buf = (void *)&s->usable[pos];
+
+	/* setup for usage as stack */
+	s->usable[--pos] = (uintptr_t)exit_fn;
+	rsp = (uint64_t)&s->usable[pos];
+	assert_rsp_aligned(rsp);
+	return rsp;
+}
+
 
 /**
  * thread_create - creates a new thread
@@ -591,10 +644,12 @@ thread_t *thread_create(thread_fn_t fn, void *arg)
 thread_t *thread_create_with_buf(thread_fn_t fn, void **buf, size_t buf_len)
 {
 	void *ptr;
+	preempt_disable();
 	thread_t *th = __thread_create();
-	if (unlikely(!th))
+	if (unlikely(!th)) {
+		preempt_enable();
 		return NULL;
-
+	}
 	th->tf.rsp = stack_init_to_rsp_with_buf(th->stack, &ptr,
 						buf_len, thread_exit);
 	th->tf.rdi = (uint64_t)ptr;
@@ -602,6 +657,7 @@ thread_t *thread_create_with_buf(thread_fn_t fn, void **buf, size_t buf_len)
 	th->tf.rip = (uint64_t)fn;
 	th->stack_busy = false;
 	*buf = ptr;
+	preempt_enable();
 	return th;
 }
 
@@ -649,10 +705,15 @@ int thread_spawn_main(thread_fn_t fn, void *arg)
 static void thread_finish_exit(void)
 {
 	struct thread *th = thread_self();
-
+	float total_us = rdtsc_to_us(STAT(SWITCH_TIME_EBPF));
+	uint64_t count = STAT(SWITCH_COUNT_EBPF);
+	log_info("ebpf stats: %.3fus %lu %.3fus\n", total_us, count, total_us / count);
+	
 	/* if the main thread dies, kill the whole program */
-	if (unlikely(th->main_thread))
+	if (unlikely(th->main_thread)) {
+		// print some stats
 		init_shutdown(EXIT_SUCCESS);
+	}
 	stack_free(th->stack);
 	tcache_free(&perthread_get(thread_pt), th);
 	__self = NULL;

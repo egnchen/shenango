@@ -1,8 +1,23 @@
 
 #include <dlfcn.h>
+#include <sched.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 #include <runtime/preempt.h>
+#include <base/log.h>
+#include <bits/sched.h>
+
+#define WRITE_LOG(expr) do { \
+	char buf[64]; \
+	int cpu = sched_getcpu(); \
+	buf[0] = '0' + (cpu / 10); \
+	buf[1] = '0' + (cpu % 10); \
+	buf[2] = ' '; \
+	strcpy(&buf[3], expr); \
+	write(1, buf, strlen(buf)); \
+} while(0)
 
 #define HOOK3(fnname, retType, argType1, argType2, argType3)                   \
 	retType fnname(argType1 __a1, argType2 __a2, argType3 __a3)            \
@@ -11,6 +26,7 @@
 		if (unlikely(!real_##fnname)) {                                \
 			real_##fnname = dlsym(RTLD_NEXT, #fnname);             \
 		}                                                              \
+		WRITE_LOG(#fnname " called\n");	\
 		preempt_disable();                                             \
 		retType __t = real_##fnname(__a1, __a2, __a3);                 \
 		preempt_enable();                                              \
@@ -24,6 +40,7 @@
 		if (unlikely(!real_##fnname)) {                                \
 			real_##fnname = dlsym(RTLD_NEXT, #fnname);             \
 		}                                                              \
+		WRITE_LOG(#fnname " called\n");	\
 		preempt_disable();                                             \
 		retType __t = real_##fnname(__a1, __a2);                       \
 		preempt_enable();                                              \
@@ -37,6 +54,7 @@
 		if (unlikely(!real_##fnname)) {                                \
 			real_##fnname = dlsym(RTLD_NEXT, #fnname);             \
 		}                                                              \
+		WRITE_LOG(#fnname " called\n");	\
 		preempt_disable();                                             \
 		retType __t = real_##fnname(__a1);                             \
 		preempt_enable();                                              \
@@ -50,12 +68,25 @@
 		if (unlikely(!real_##fnname)) {                                \
 			real_##fnname = dlsym(RTLD_NEXT, #fnname);             \
 		}                                                              \
+		WRITE_LOG(#fnname " called\n");	\
 		preempt_disable();                                             \
 		real_##fnname(__a1);                                           \
 		preempt_enable();                                              \
 	}
 
-HOOK1(malloc, void *, size_t);
+#define HOOK1_PREEMPT(fnname, retType, argType1)                                       \
+	retType fnname(argType1 __a1)                                          \
+	{                                                                      \
+		static retType (*real_##fnname)(argType1);                     \
+		if (unlikely(!real_##fnname)) {                                \
+			real_##fnname = dlsym(RTLD_NEXT, #fnname);             \
+		}                                                              \
+		WRITE_LOG(#fnname " called(preemptable)\n");	\
+		retType __t = real_##fnname(__a1);                             \
+		return __t;                                                    \
+	}
+
+HOOK1_PREEMPT(malloc, void *, size_t);
 HOOK1_NORET(free, void *);
 HOOK2(realloc, void *, void *, size_t);
 HOOK1_NORET(cfree, void *);

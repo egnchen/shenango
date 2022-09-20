@@ -28,6 +28,8 @@ static const char *stat_names[] = {
 	"preemptions",
 	"preemptions_stolen",
 	"core_migrations",
+	"time_switch_ebpf",
+	"cnt_switch_ebpf",
 
 	/* network stack counters */
 	"rx_bytes",

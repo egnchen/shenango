@@ -23,6 +23,12 @@ static inline uint64_t rdtsc(void)
 	return ((uint64_t)a) | (((uint64_t)d) << 32);
 }
 
+#define RDTSC_FREQ 2300000000
+static inline float rdtsc_to_us(uint64_t delta)
+{
+	return (float)delta / (RDTSC_FREQ / 1000000);
+}
+
 static inline uint64_t rdtscp(uint32_t *auxp)
 {
 	uint32_t a, d, c;
