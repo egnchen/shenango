@@ -37,8 +37,7 @@ static struct tcache *thread_tcache;
 static DEFINE_PERTHREAD(struct tcache_perthread, thread_pt);
 
 /* used to track cycle usage in scheduler */
-static __thread uint64_t last_tsc;
-static __thread volatile uint64_t last_cycle;
+__thread uint64_t last_tsc;
 /* used to force timer and network processing after a timeout */
 static __thread uint64_t last_watchdog_tsc;
 
@@ -68,7 +67,13 @@ static __noreturn void jmp_thread(thread_t *th)
 		while (load_acquire(&th->stack_busy))
 			cpu_relax();
 	}
-	__jmp_thread(&th->tf);
+	unsigned int from_kernel = th->return_from_kernel;
+	th->return_from_kernel = 0;
+	if(from_kernel) {
+		__jmp_thread_kernel(&th->tf);
+	} else {
+		__jmp_thread(&th->tf);
+	}
 }
 
 /**
@@ -218,7 +223,7 @@ static __noinline struct thread *do_watchdog(struct kthread *l)
 }
 
 /* the main scheduler routine, decides what to run next */
-static __noreturn __noinline void schedule(void)
+__noreturn __noinline void schedule(void)
 {
 	struct kthread *r = NULL, *l = myk();
 	uint64_t start_tsc, end_tsc;
@@ -334,7 +339,6 @@ done:
 	assert((l->rcu_gen & 0x1) == 0x1);
 
 	/* and jump into the next thread */
-	last_cycle = rdtsc();
 	jmp_thread(th);
 }
 
@@ -387,7 +391,7 @@ void join_kthread(struct kthread *k)
 	}
 }
 
-static __always_inline void enter_schedule(thread_t *myth)
+void enter_schedule(thread_t *myth)
 {
 	struct kthread *k = myk();
 	thread_t *th;
@@ -452,6 +456,7 @@ void thread_park_and_unlock_np(spinlock_t *l)
 	enter_schedule(myth);
 }
 
+
 /**
  * thread_yield - yields the currently running thread
  *
@@ -512,13 +517,7 @@ void thread_finish_yield_kthread(void)
 	assert(myth->state == THREAD_STATE_RUNNING);
 	myth->state = THREAD_STATE_SLEEPING;
 	thread_ready(myth);
-
-	if(myth->return_from_kernel) {
-		uint64_t cycle = rdtsc();
-		STAT(SWITCH_TIME_EBPF) += cycle - last_cycle;
-		STAT(SWITCH_COUNT_EBPF) += 1;
-	}
-	myth->return_from_kernel = 0;
+	assert(!myth->return_from_kernel);
 
 	store_release(&k->rcu_gen, k->rcu_gen + 1);
 	spin_lock(&k->lock);
@@ -562,7 +561,9 @@ static __always_inline thread_t *__thread_create(void)
 
 	th->stack = s;
 	th->state = THREAD_STATE_SLEEPING;
-	th->main_thread = false;
+	th->pf_handle_thread = NULL;
+	th->fault_addr = NULL;
+	th->typ = THREAD_TYPE_DEFAULT;
 
 	return th;
 }
@@ -697,7 +698,7 @@ int thread_spawn_main(thread_fn_t fn, void *arg)
 	th = thread_create(fn, arg);
 	if (!th)
 		return -ENOMEM;
-	th->main_thread = true;
+	th->typ = THREAD_TYPE_MAIN;
 	thread_ready(th);
 	return 0;
 }
@@ -710,7 +711,7 @@ static void thread_finish_exit(void)
 	log_info("ebpf stats: %.3fus %lu %.3fus\n", total_us, count, total_us / count);
 	
 	/* if the main thread dies, kill the whole program */
-	if (unlikely(th->main_thread)) {
+	if (unlikely(th->typ == THREAD_TYPE_MAIN)) {
 		// print some stats
 		init_shutdown(EXIT_SUCCESS);
 	}

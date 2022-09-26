@@ -36,7 +36,7 @@
 #define RUNTIME_SCHED_POLL_ITERS	4
 #define RUNTIME_SCHED_MIN_POLL_US	2
 #define RUNTIME_WATCHDOG_US		50
-
+#define RUNTIME_SWAP_CACHE_LEN	(4 * MB)
 
 /*
  * Trap frame support
@@ -90,22 +90,31 @@ enum {
 	THREAD_STATE_SLEEPING,
 };
 
+enum {
+	THREAD_TYPE_DEFAULT = 0,
+	THREAD_TYPE_MAIN = 1,
+	THREAD_TYPE_SWAP = 2,
+};
+
 struct stack;
 
 struct thread {
 	struct thread_tf	tf;
 	struct list_node	link;
 	struct stack		*stack;
-	unsigned int		main_thread;
+	unsigned int		typ;
 	unsigned int		return_from_kernel;
 	unsigned int		state;
 	unsigned int		stack_busy;
+	struct thread *		pf_handle_thread;
+	void *				fault_addr;
 };
 
 typedef void (*runtime_fn_t)(void);
 
 /* assembly helper routines from switch.S */
 extern void __jmp_thread(struct thread_tf *tf) __noreturn;
+extern void __jmp_thread_kernel(struct thread_tf *tf) __noreturn;
 extern void __jmp_thread_direct(struct thread_tf *oldtf,
 				struct thread_tf *newtf,
 				unsigned int *stack_busy);
@@ -400,6 +409,11 @@ static inline bool timer_needed(struct kthread *k)
 	return k->timern > 0 && k->timers[0].deadline_us <= microtime();
 }
 
+/*
+ * swap subsystem
+ */
+extern void *swap_start;
+extern const uint64_t swap_len;
 
 /*
  * Init
@@ -414,6 +428,7 @@ extern int sched_init_thread(void);
 extern int stat_init_thread(void);
 extern int net_init_thread(void);
 extern int smalloc_init_thread(void);
+extern int swap_init_thread(void);
 extern int bpf_init_thread(void);
 
 /* global initialization */
@@ -425,6 +440,7 @@ extern int net_init(void);
 extern int arp_init(void);
 extern int trans_init(void);
 extern int smalloc_init(void);
+extern int swap_init(void);
 extern int bpf_init(void);
 
 /* late initialization */

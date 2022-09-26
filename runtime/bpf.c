@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #include "base/thread.h"
+#include "bpf/libbpf_legacy.h"
 #include "defs.h"
 #include "bpf_defs.h"
 #include <base/log.h>
@@ -12,11 +13,13 @@
 static struct bpf_link *blink;
 static struct bpf_program *bprog;
 static struct bpf_object *bobj;
-static struct bpf_map *default_ctx_map;
+static struct bpf_map *thread_ctx_map;
+static struct bpf_map *process_ctx_map;
 
 extern __thread thread_t *__self;
 extern __thread void *runtime_stack;
-extern void thread_finish_yield_kthread(void);
+// extern void thread_finish_yield_kthread(void);
+extern void return_from_ebpf_kthread(void);
 
 /**
  * register current process to bpf map
@@ -24,50 +27,40 @@ extern void thread_finish_yield_kthread(void);
 int bpf_init_thread() {
   struct thread_bpf_ctx ctx = {
     .current_thread_ptr = &__self,
+    .preempt_cnt_ptr = &preempt_cnt,
     .runtime_stack = runtime_stack,
-    .runtime_fn = thread_finish_yield_kthread
+    .runtime_fn = return_from_ebpf_kthread,
   };
   __u64 key = ((__u64)getpid() << 32) | gettid();
-  if(bpf_map__update_elem(default_ctx_map, &key, sizeof(key), &ctx, sizeof(ctx), BPF_ANY)) {
-    fprintf(stderr, "ERROR: cannot update default_ctx map\n");
-    return -1;
-  }
-	printf("Registered %llu -> %p\n", key, ctx.current_thread_ptr);
+  BUG_ON(bpf_map__update_elem(thread_ctx_map, &key, sizeof(key), &ctx, sizeof(ctx), BPF_ANY));
+	log_info("eBPF registered %llu -> %p", key, ctx.current_thread_ptr);
   return 0;
 }
 
 int bpf_init() {
   bobj = bpf_object__open_file("runtime/kern.bpf.o", NULL);
-  if (libbpf_get_error(bobj)) {
-    fprintf(stderr, "ERROR: opening BPF object file failed\n");
-    return -1;
-  }
-
-  bprog = bpf_object__find_program_by_name(bobj, "handle_userspace_pf");
-  if (!bprog) {
-    fprintf(stderr, "ERROR: finding a prog in obj file failed\n");
-    return -1;
-  }
-
-  /* load BPF program */
-  if (bpf_object__load(bobj)) {
-    fprintf(stderr, "ERROR: loading BPF object file failed\n");
-    return -1;
-  }
+  BUG_ON(libbpf_get_error(bobj));
+  BUG_ON(bpf_object__load(bobj));
+  
+  bprog = bpf_object__find_program_by_name(bobj, "handle_userspace_pf_mmfault");
+  BUG_ON(!bprog);
 
   blink = bpf_program__attach(bprog);
-  if (libbpf_get_error(blink)) {
-    fprintf(stderr, "ERROR: bpf_program__attach failed\n");
-    blink = NULL;
-    return -1;
-  }
+  BUG_ON(!blink);
+  BUG_ON(libbpf_get_error(blink));
 
-  default_ctx_map = bpf_object__find_map_by_name(bobj, "default_ctx");
-  if(!default_ctx_map) {
-    fprintf(stderr, "ERROR: failed to get default context map\n");
-    return -1;
-  }
-  log_info("Successfully installed bpf program");
+  thread_ctx_map = bpf_object__find_map_by_name(bobj, "thread_ctx_map");
+  process_ctx_map = bpf_object__find_map_by_name(bobj, "process_ctx_map");
+  BUG_ON(!thread_ctx_map || !process_ctx_map);
+
+  // do per-process preparation
+  struct process_bpf_ctx ctx;
+  uint64_t key = getpid();
+  ctx.cache_start = swap_start;
+  ctx.cache_len = swap_len;
+  BUG_ON(bpf_map__update_elem(process_ctx_map, &key, sizeof(key), &ctx, sizeof(ctx), BPF_ANY));
+  log_info("eBPF registered process %lu", key);
   
+  log_info("Successfully installed bpf program");
   return 0;
 }

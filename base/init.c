@@ -60,22 +60,18 @@ static int init_internal(void)
 {
 	int ret;
 
-	log_info("calling cpu_init...");
 	ret = cpu_init();
 	if (ret)
 		return ret;
 
-	log_info("calling time_init...");
 	ret = time_init();
 	if (ret)
 		return ret;
 
-	log_info("calling page_init...");
 	ret = page_init();
 	if (ret)
 		return ret;
 
-	log_info("calling slab_init...");
 	return slab_init();
 }
 

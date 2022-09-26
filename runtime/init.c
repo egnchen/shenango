@@ -34,6 +34,7 @@ static const struct init_entry global_init_handlers[] = {
 	GLOBAL_INITIALIZER(sched),
 	GLOBAL_INITIALIZER(preempt),
 	GLOBAL_INITIALIZER(smalloc),
+	GLOBAL_INITIALIZER(swap),
 	GLOBAL_INITIALIZER(bpf),
 
 	/* network stack */
@@ -54,6 +55,7 @@ static const struct init_entry thread_init_handlers[] = {
 	THREAD_INITIALIZER(timer),
 	THREAD_INITIALIZER(sched),
 	THREAD_INITIALIZER(smalloc),
+	THREAD_INITIALIZER(swap),
 	THREAD_INITIALIZER(bpf),
 
 	/* network stack */

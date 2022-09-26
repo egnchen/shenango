@@ -79,6 +79,58 @@ __jmp_thread:
 	popq	%rsi
 	jmpq	*%rsi
 
+
+/**
+ * __jmp_thread_kernel - return to a thread whose trapframe is saved by the kernel
+ * @tf: the trap frame to restore (%rdi)
+ *
+ * This low-level variant isn't intended to be called directly.
+ * Re-enables preemption, parking the kthread if necessary.
+ * Does not return.
+ */
+.align 16
+.globl __jmp_thread_kernel
+.type __jmp_thread_kernel, @function
+__jmp_thread_kernel:
+	/* restore all regs(except for rdi & rsi) */
+	movq    RBX(%rdi), %rbx
+	movq    RBP(%rdi), %rbp
+	movq    R12(%rdi), %r12
+	movq    R13(%rdi), %r13
+	movq    R14(%rdi), %r14
+	movq    R15(%rdi), %r15
+	movq    R8(%rdi),  %r8
+	movq    R9(%rdi),  %r9
+	movq    R10(%rdi), %r10
+	movq    R11(%rdi), %r11
+	movq    RCX(%rdi), %rcx
+	movq    RDX(%rdi), %rdx
+	movq	RAX(%rdi), %rax
+
+	/* restore ip, stack, rdi & rsi */
+	movq    RSP(%rdi), %rsp
+	movq    RIP(%rdi), %rsi
+	push    %rsi
+	movq    RSI(%rdi), %rsi
+	movq    RDI(%rdi), %rdi
+
+	/* re-enable preemption */
+	subl	$1, %fs:preempt_cnt@tpoff
+	jz	1f
+
+	/* jump into trap frame */
+	ret
+	nop
+
+1:	/* cold-path, save RIP and park the kthread */
+	pushq	%rsi
+	pushq	%rdi
+	call	preempt
+	popq	%rdi
+	popq	%rsi
+	jmpq	*%rsi
+
+
 /**
  * __jmp_thread_direct - directly switches from one thread to the next
  * @oldtf: the trap frame to save (%rdi)

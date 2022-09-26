@@ -6,6 +6,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 
 #define NR_BUFFERS 10240
 void *buffer;
@@ -46,18 +47,26 @@ void *test_ebpf_latency(void *arg)
     }
 
     WRITE("Malloc finished\n");
-    char buf[16] = "     l\n";
+
+    char write_buf[16];
     
     // trigger page fault
     int l = 0xf;
     while(l < NR_BUFFERS * 4096) {
+        // write_buf[0] = (l / 100000000) % 10 + '0';
+        // write_buf[1] = (l / 10000000) % 10 + '0';
+        // write_buf[2] = (l / 1000000) % 10 + '0';
+        // write_buf[3] = (l / 100000) % 10 + '0';
+        // write_buf[4] = (l / 10000) % 10 + '0';
+        // write_buf[5] = (l / 1000) % 10 + '0';
+        // write_buf[6] = (l / 100) % 10 + '0';
+        // write_buf[7] = (l / 10) % 10 + '0';
+        // write_buf[8] = l % 10 + '0';
+        // write_buf[9] = '\n';
+        // write_buf[10]= '\0';
+        // WRITE(write_buf);
         *((char *)(buffer + l)) = 'a';
         l += 1024;
-        buf[0] = '0' + (l / 1000) % 10;
-        buf[1] = '0' + (l / 100) % 10;
-        buf[2] = '0' + (l / 10) % 10;
-        buf[3] = '0' + l % 10;
-        WRITE_NULL(buf);
     }
 
     WRITE("access finished\n");

@@ -68,16 +68,24 @@ enum {
 	THREAD_STATE_SLEEPING,
 };
 
+enum {
+	THREAD_TYPE_DEFAULT = 0,
+	THREAD_TYPE_MAIN = 1,
+	THREAD_TYPE_SWAP = 2,
+};
+
 struct stack;
 
 struct thread {
 	struct thread_tf	tf;
 	struct list_node	link;
 	struct stack		*stack;
-	unsigned int		main_thread;
+	unsigned int		typ;
 	unsigned int		return_from_kernel;
 	unsigned int		state;
 	unsigned int		stack_busy;
+	struct thread *		pf_handle_thread;
+	void *				fault_addr;
 };
 #endif
 
