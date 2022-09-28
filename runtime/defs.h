@@ -118,10 +118,15 @@ extern void __jmp_thread_kernel(struct thread_tf *tf) __noreturn;
 extern void __jmp_thread_direct(struct thread_tf *oldtf,
 				struct thread_tf *newtf,
 				unsigned int *stack_busy);
+extern void __jmp_thread_direct_kernel(struct thread_tf *oldtf,
+				struct thread_tf *newtf,
+				unsigned int *stack_busy);
 extern void __jmp_runtime(struct thread_tf *tf, runtime_fn_t fn,
 			  void *stack);
 extern void __jmp_runtime_nosave(runtime_fn_t fn, void *stack) __noreturn;
 
+/* helper functions */
+extern void print_trampoline(const thread_t *th);
 
 /*
  * Stack support

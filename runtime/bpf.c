@@ -60,6 +60,7 @@ int bpf_init() {
   ctx.cache_len = swap_len;
   BUG_ON(bpf_map__update_elem(process_ctx_map, &key, sizeof(key), &ctx, sizeof(ctx), BPF_ANY));
   log_info("eBPF registered process %lu", key);
+  log_debug("eBPF will ignore %p(length %lx)", ctx.cache_start, ctx.cache_len);
   
   log_info("Successfully installed bpf program");
   return 0;

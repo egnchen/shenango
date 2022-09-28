@@ -96,7 +96,15 @@ static void jmp_thread_direct(thread_t *oldth, thread_t *newth)
 		while (load_acquire(&newth->stack_busy))
 			cpu_relax();
 	}
-	__jmp_thread_direct(&oldth->tf, &newth->tf, &oldth->stack_busy);
+	// log_debug("Jumping back to %p", newth);
+	// print_trampoline(newth);
+	unsigned int from_kernel = newth->return_from_kernel;
+	newth->return_from_kernel = 0;
+	if(from_kernel) {
+		__jmp_thread_direct_kernel(&oldth->tf, &newth->tf, &oldth->stack_busy);
+	} else {
+		__jmp_thread_direct(&oldth->tf, &newth->tf, &oldth->stack_busy);
+	}
 }
 
 /**
@@ -825,4 +833,15 @@ int sched_init(void)
 	}
 
 	return 0;
+}
+
+void print_trampoline(const thread_t *th)
+{
+	const struct thread_tf *tf = &th->tf;
+	log_debug("Trampoline for %p:", th);
+	log_debug("RAX %016lx\tRBX %016lx\tRCX %016lx\tRDX %016lx", tf->rax, tf->rbx, tf->rcx, tf->rdx);
+	log_debug("RSI %016lx\tRDI %016lx\tRBP %016lx\tRSP %016lx", tf->rsi, tf->rdi, tf->rbp, tf->rsp);
+	log_debug("R8  %016lx\tR9  %016lx\tR10 %016lx\tR11 %016lx", tf->r8,  tf->r9,  tf->r10, tf->r11);
+	log_debug("R12 %016lx\tR13 %016lx\tR14 %016lx\tR15 %016lx", tf->r12, tf->r13, tf->r14, tf->r15);
+	log_debug("RIP %lx", tf->rip);
 }

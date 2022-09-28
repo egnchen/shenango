@@ -15,8 +15,8 @@
 #define PAGE_ALIGN(addr) (void *)((uint64_t)(addr) & ~(PAGE_SIZE - 1))
 
 void *swap_start;
+const uint64_t swap_len = 4 * MB;
 uint64_t cache_off = 0;
-const uint64_t swap_len = 4 * 1024 * 1024; // 1MB
 
 uint64_t stat_time;
 int stat_cnt;
@@ -46,14 +46,12 @@ void pf_handle_routine(thread_t *fault_thread) {
       if (cache_off >= swap_len) {
         cache_off = 0;
       }
-      // fill page with content
-      // printf("filling page with %c...\n", 'A' + (cur_off % 26));
+      // fill page with random, but unique content
       memset(swap_start + cur_off, 'A' + (cur_off % 26), PAGE_SIZE);
       void *new_addr = do_mremap(swap_start + cur_off, fault_addr);
       BUG_ON(new_addr == MAP_FAILED);
-      log_debug("mapped page %p", fault_addr);
+      // log_debug("mapped page %p", fault_addr);
       fault_thread->fault_addr = NULL;
-      thread_ready(fault_thread);
     }
     // make self runnable **until next PF**
     
@@ -64,7 +62,10 @@ void pf_handle_routine(thread_t *fault_thread) {
     assert(self->state == THREAD_STATE_RUNNING);
     self->state = THREAD_STATE_SLEEPING;
     store_release(&self->stack_busy, true);
-    log_debug("Put %p to sleep", self);
+    // should be put here, or racing condition might occur!
+    if(fault_addr) {
+      thread_ready(fault_thread);
+    }
     enter_schedule(self);
   }
 }
@@ -77,7 +78,8 @@ void return_from_ebpf_kthread(void)
   assert_preempt_disabled();
   assert(myth->return_from_kernel);
   assert(myth->fault_addr);
-  log_debug("%p pf @%p, ip=%p", myth, myth->fault_addr, (void *)myth->tf.rip);
+  // log_debug("%p pf @%p, ip=%p", myth, myth->fault_addr, (void *)myth->tf.rip);
+  // print_trampoline(myth);
 
 	assert(myth->state == THREAD_STATE_RUNNING);
 	myth->state = THREAD_STATE_SLEEPING;
@@ -107,7 +109,7 @@ int swap_init_thread()
 
 int swap_init()
 {
-  swap_start = mmap(NULL, RUNTIME_SWAP_CACHE_LEN, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  swap_start = mmap(NULL, swap_len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   BUG_ON(swap_start == MAP_FAILED);
   log_debug("Swap region returned by mmap: %p\n", swap_start);
   return 0;

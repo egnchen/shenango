@@ -29,7 +29,7 @@ extern __thread volatile unsigned int preempt_cnt;
 void *test_ebpf_latency(void *arg)
 {
     // arg should be null
-    WRITE("Mallocing...\n");
+    printf("Mallocing...\n");
     char *buffer;
 
     // hack: disable preemption here
@@ -41,30 +41,16 @@ void *test_ebpf_latency(void *arg)
     buffer = mmap(NULL, NR_BUFFERS * 4096, PROT_READ | PROT_WRITE,
                 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     
-    asm volatile("" ::: "memory");
+    // asm volatile("" ::: "memory");
     if((preempt_cnt & ~(1<<31)) > 0) {
         preempt_cnt = 1 << 31;
     }
-
-    WRITE("Malloc finished\n");
-
-    char write_buf[16];
+    
+    printf("buffer is %p\n", buffer);
     
     // trigger page fault
     int l = 0xf;
     while(l < NR_BUFFERS * 4096) {
-        // write_buf[0] = (l / 100000000) % 10 + '0';
-        // write_buf[1] = (l / 10000000) % 10 + '0';
-        // write_buf[2] = (l / 1000000) % 10 + '0';
-        // write_buf[3] = (l / 100000) % 10 + '0';
-        // write_buf[4] = (l / 10000) % 10 + '0';
-        // write_buf[5] = (l / 1000) % 10 + '0';
-        // write_buf[6] = (l / 100) % 10 + '0';
-        // write_buf[7] = (l / 10) % 10 + '0';
-        // write_buf[8] = l % 10 + '0';
-        // write_buf[9] = '\n';
-        // write_buf[10]= '\0';
-        // WRITE(write_buf);
         *((char *)(buffer + l)) = 'a';
         l += 1024;
     }

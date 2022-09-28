@@ -194,6 +194,75 @@ __jmp_thread_direct:
 	jmpq	*%rcx
 
 /**
+ * __jmp_thread_direct_kernel - directly switches from one thread to the next, whose trapframe is saved by the kernel
+ * @oldtf: the trap frame to save (%rdi)
+ * @newtf: the trap frame to restore (%rsi)
+ * @stack_busy: a pointer to the busy stack flag owned by the old thread (%rdx)
+ *
+ * This low-level variant isn't intended to be called directly.
+ * Re-enables preemption, parking the kthread if necessary.
+ * Does return.
+ */
+.align 16
+.globl __jmp_thread_direct_kernel
+.type __jmp_thread_direct_kernel, @function
+__jmp_thread_direct_kernel:
+	/* save ip and stack */
+	movq    (%rsp), %r8
+	movq    %r8, RIP(%rdi)
+	leaq    8(%rsp), %r8
+	movq    %r8, RSP(%rdi)
+
+	/* save callee regs */
+	movq    %rbx, RBX(%rdi)
+	movq    %rbp, RBP(%rdi)
+	movq    %r12, R12(%rdi)
+	movq    %r13, R13(%rdi)
+	movq    %r14, R14(%rdi)
+	movq    %r15, R15(%rdi)
+
+	/* clear the stack busy flag */
+	movl	$0, (%rdx)
+
+	/* restore all regs(except for rdi & rsi) */
+	movq    RBX(%rsi), %rbx
+	movq    RBP(%rsi), %rbp
+	movq    R12(%rsi), %r12
+	movq    R13(%rsi), %r13
+	movq    R14(%rsi), %r14
+	movq    R15(%rsi), %r15
+	movq    R8(%rsi),  %r8
+	movq    R9(%rsi),  %r9
+	movq    R10(%rsi), %r10
+	movq    R11(%rsi), %r11
+	movq    RCX(%rsi), %rcx
+	movq    RDX(%rsi), %rdx
+	movq	RAX(%rsi), %rax
+
+	/* restore ip, stack, rdi & rsi */
+	movq    RSP(%rsi), %rsp
+	movq    RIP(%rsi), %rdi
+	push    %rdi
+	movq    RDI(%rsi), %rdi
+	movq    RSI(%rsi), %rsi
+
+	/* re-enable preemption */
+	subl	$1, %fs:preempt_cnt@tpoff
+	jz	1f
+
+	/* jump into trap frame */
+	ret
+	nop
+
+1:	/* cold-path, save RIP and park the kthread */
+	pushq	%rcx
+	pushq	%rdi
+	call	preempt
+	popq	%rdi
+	popq	%rcx
+	jmpq	*%rcx
+
+/**
  * __jmp_runtime - saves the current trap frame and jumps to a function in the
  *                 runtime
  * @tf: the struct thread_tf to save state (%rdi)

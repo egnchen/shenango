@@ -8,7 +8,7 @@ char LICENSE[] SEC("license") = "Dual BSD/GPL";
 #define assert(expr) do { \
   if(!(expr)) { \
     bpf_printk("Assertion \"%s\"(%s:%d) failed.", #expr, __FUNCTION__, __LINE__); \
-    return -1; \
+    return 0; \
   } \
 } while(0);
 
@@ -27,16 +27,14 @@ struct {
 } process_ctx_map SEC(".maps");
 
 static inline int return_to_userspace_handler(struct pt_regs *ctx, __u64 id, unsigned long address,
-  struct thread_bpf_ctx *thread_ctx, struct pt_regs *regs)
+  struct thread_bpf_ctx *thread_ctx, struct pt_regs *local_ctx, struct pt_regs *regs)
 {
   struct thread *th = NULL;
   struct thread_tf tf;
-  struct pt_regs local_ctx;
   unsigned int preempt_cnt;
   unsigned int thread_type;
 
   assert(thread_ctx->current_thread_ptr);
-  // CHECK(thread_ctx->current_thread_ptr, "Failed to read current thread ptr");
   assert(bpf_probe_read_user(&th, sizeof(struct thread *), thread_ctx->current_thread_ptr) == 0);
   assert(th);
   
@@ -44,44 +42,42 @@ static inline int return_to_userspace_handler(struct pt_regs *ctx, __u64 id, uns
   // this will avoid hooking libOS code
   assert(bpf_probe_read_user(&preempt_cnt, sizeof(preempt_cnt), thread_ctx->preempt_cnt_ptr) == 0);
   if((preempt_cnt & ~(1u << 31)) != 0) {
-    // bpf_printk("preemption not enabled, ignored.\n");
+    bpf_printk("preemption not enabled, ignored.");
     return 0;
   }
 
   // don't hook on swap threads
   assert(bpf_probe_read_user(&thread_type, sizeof(thread_type), &th->typ) == 0);
   if(thread_type == THREAD_TYPE_SWAP) {
+    bpf_printk("swap thread detected, ignored.");
     return 0;
   }
   
   // don't hook on swap routine
   
   // save current thread context to trampoline & write to userspace
-  assert(regs);
-  assert(bpf_probe_read_kernel(&local_ctx, sizeof(struct pt_regs), regs) == 0);
-  
-  tf.rdi = local_ctx.di;
-  tf.rsi = local_ctx.si;
-  tf.rdx = local_ctx.dx;
-  tf.rcx = local_ctx.cx;
-  tf.r8 = local_ctx.r8;
-  tf.r9 = local_ctx.r9;
-  tf.r10 = local_ctx.r10;
-  tf.r11 = local_ctx.r11;
+  tf.rdi = local_ctx->di;
+  tf.rsi = local_ctx->si;
+  tf.rdx = local_ctx->dx;
+  tf.rcx = local_ctx->cx;
+  tf.r8 = local_ctx->r8;
+  tf.r9 = local_ctx->r9;
+  tf.r10 = local_ctx->r10;
+  tf.r11 = local_ctx->r11;
 
-  tf.rbx = local_ctx.bx;
-  tf.rbp = local_ctx.bp;
-  tf.r12 = local_ctx.r12;
-  tf.r13 = local_ctx.r13;
-  tf.r14 = local_ctx.r14;
-  tf.r15 = local_ctx.r15;
+  tf.rbx = local_ctx->bx;
+  tf.rbp = local_ctx->bp;
+  tf.r12 = local_ctx->r12;
+  tf.r13 = local_ctx->r13;
+  tf.r14 = local_ctx->r14;
+  tf.r15 = local_ctx->r15;
 
-  tf.rax = local_ctx.ax;
-  tf.rip = local_ctx.ip;
-  tf.rsp = local_ctx.sp;
+  tf.rax = local_ctx->ax;
+  tf.rip = local_ctx->ip;
+  tf.rsp = local_ctx->sp;
 
-  bpf_printk("Page fault triggered:\n\tip 0x%lx addr 0x%lx th 0x%lx", local_ctx.ip, address, th);
-  // bpf_printk("New rip will be %llx\n", tf.rip);
+  // bpf_printk("Page fault triggered:\n\tip 0x%lx addr 0x%lx th 0x%lx", local_ctx.ip, address, th);
+  // bpf_printk("New rip will be %llx", tf.rip);
 
   // disable preemption
   preempt_cnt += 1;
@@ -97,13 +93,15 @@ static inline int return_to_userspace_handler(struct pt_regs *ctx, __u64 id, uns
   // set fault address
   assert(bpf_probe_write_user(&th->fault_addr, &address, sizeof(address)) == 0);
   
+  bpf_printk("Before override, ip %lx, sp %lx, bp %lx", local_ctx->ip, local_ctx->sp, local_ctx->bp);
   // jump to runtime function and runtime stack
-  local_ctx.sp = (unsigned long)thread_ctx->runtime_stack;
-  local_ctx.ip = (unsigned long)thread_ctx->runtime_fn;
-  assert(bpf_override_regs(regs, &local_ctx) == 0);
+  local_ctx->sp = (unsigned long)thread_ctx->runtime_stack;
+  local_ctx->ip = (unsigned long)thread_ctx->runtime_fn;
+  local_ctx->bp = 0UL; // just in case base pointers are enabled
+  assert(bpf_override_regs(regs, local_ctx) == 0);
   
   // we're done
-  // bpf_printk("Overriding return, going back to %p, stack %p\n", local_ctx.ip, local_ctx.sp);
+  bpf_printk("After override,  ip %lx, sp %lx, bp %lx", local_ctx->ip, local_ctx->sp, local_ctx->bp);
   bpf_override_return(ctx, 0);
   return 0;
 }
@@ -115,10 +113,12 @@ int handle_userspace_pf_mmfault(struct pt_regs *ctx)
   unsigned long address = PT_REGS_PARM2(ctx);
   unsigned int flags = PT_REGS_PARM3(ctx);
   struct pt_regs *regs = PT_REGS_PARM4(ctx);
+  struct pt_regs local_ctx;
 
   __u64 id = bpf_get_current_pid_tgid();
   struct thread_bpf_ctx *thread_ctx = bpf_map_lookup_elem(&thread_ctx_map, &id);
   if(!thread_ctx) {
+    // not registered
     return 0;
   }
 
@@ -126,10 +126,14 @@ int handle_userspace_pf_mmfault(struct pt_regs *ctx)
 
   const struct vm_operations_struct *ops = NULL;
   assert(bpf_probe_read_kernel(&ops, sizeof(ops), &vma->vm_ops) == 0);
-  // bpf_printk("stat is %d\n", stat_cnt);
+
+  assert(regs);
+  assert(bpf_probe_read_kernel(&local_ctx, sizeof(struct pt_regs), regs) == 0);
+
+  bpf_printk("encountered page fault %lx, ip %lx, sp %lx", address, local_ctx.ip, local_ctx.sp);
   if(ops == NULL) {
     // this is an anonymous page
-    return return_to_userspace_handler(ctx, id, address, thread_ctx, regs);
+    return return_to_userspace_handler(ctx, id, address, thread_ctx, &local_ctx, regs);
   }
   return 0;
 }
@@ -140,11 +144,14 @@ int handle_userspace_pf(struct pt_regs *ctx)
   // parameters
   struct pt_regs *regs = PT_REGS_PARM1(ctx);
   unsigned long address = PT_REGS_PARM3(ctx);
+  struct pt_regs local_ctx;
 
   __u64 id = bpf_get_current_pid_tgid();
   struct thread_bpf_ctx *thread_ctx = bpf_map_lookup_elem(&thread_ctx_map, &id);
   if(!thread_ctx) {
     return 0;
   }
-  return return_to_userspace_handler(ctx, id, address, thread_ctx, regs);
+  assert(regs);
+  assert(bpf_probe_read_kernel(&local_ctx, sizeof(struct pt_regs), regs) == 0);
+  return return_to_userspace_handler(ctx, id, address, thread_ctx, &local_ctx, regs);
 }
