@@ -714,9 +714,9 @@ int thread_spawn_main(thread_fn_t fn, void *arg)
 static void thread_finish_exit(void)
 {
 	struct thread *th = thread_self();
-	float total_us = rdtsc_to_us(STAT(SWITCH_TIME_EBPF));
-	uint64_t count = STAT(SWITCH_COUNT_EBPF);
-	log_info("ebpf stats: %.3fus %lu %.3fus\n", total_us, count, total_us / count);
+	// float total_us = rdtsc_to_us(STAT(SWITCH_TIME_EBPF));
+	// uint64_t count = STAT(SWITCH_COUNT_EBPF);
+	// log_info("ebpf stats: %.3fus %lu %.3fus\n", total_us, count, total_us / count);
 	
 	/* if the main thread dies, kill the whole program */
 	if (unlikely(th->typ == THREAD_TYPE_MAIN)) {

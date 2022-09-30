@@ -187,6 +187,8 @@ static int parse_static_arp_entry(const char *name, const char *val)
 		return ret;
 	}
 
+	log_info("Parsed one static ARP entry");
+
 	arp_static_count++;
 
 	return 0;

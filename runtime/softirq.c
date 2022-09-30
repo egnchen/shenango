@@ -103,6 +103,7 @@ thread_t *softirq_run_thread(struct kthread *k, unsigned int budget)
 	th = thread_create_with_buf(softirq_fn, (void **)&w, sizeof(*w));
 	if (unlikely(!th))
 		return NULL;
+	th->typ = THREAD_TYPE_SWAP;
 
 	softirq_gather_work(w, k, budget);
 	th->state = THREAD_STATE_RUNNABLE;

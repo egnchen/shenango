@@ -79,6 +79,8 @@ int main(int argc, const char *argv[])
     for(int i = 0; i < thread_count; i++) {
         pthread_join(threads[i], NULL);
     }
+
+    sleep(100);
     
     // test_ebpf_latency(NULL);
     return 0;
