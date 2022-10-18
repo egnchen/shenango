@@ -3,11 +3,14 @@
 
 #include <base/log.h>
 #include <runtime/preempt.h>
+#include <fcntl.h>
 
+#include "asm/atomic.h"
 #include "defs.h"
 #include "runtime/net.h"
 #include "runtime/thread.h"
 #include "runtime/tcp.h"
+#include "runtime/sync.h"
 
 #ifndef MREMAP_DONTUNMAP
 #define MREMAP_DONTUNMAP 4
@@ -20,6 +23,8 @@ void *swap_start;
 const uint64_t swap_len = 4 * MB;
 uint64_t cache_off = 0;
 
+char *memigd_buffer;
+
 uint64_t stat_time;
 int stat_cnt;
 
@@ -28,13 +33,23 @@ extern __noreturn void schedule();
 extern void enter_schedule(thread_t *);
 
 static tcpconn_t *conn;
-static const uint8_t kOpReadObject = 2;
-static const uint8_t kOpWriteObject = 3;
-static const uint8_t kOpConstruct = 5;
+
+enum {
+    OpInit = 0,
+    OpShutdown = 1,
+    OpReadObject = 2,
+    OpWriteObject = 3,
+    OpRemoveObject = 4,
+    OpConstruct = 5,
+    OpDeconstruct = 6,
+    OpCompute = 7,
+};
+
 static const uint8_t kHashTableDSType = 1;
 static const uint8_t kDSID = 1;
 static __thread uint8_t buf[PAGE_SIZE];
 static __thread uint8_t tcp_buf[PAGE_SIZE * 2];
+static uint8_t init_complete = 0;
 
 // shenango
 static inline void tcp_read_until(tcpconn_t *c, void *buf,
@@ -63,48 +78,60 @@ static inline void tcp_write_until(tcpconn_t *c, const void *buf,
 
 static int construct_remote_hashtable(uint32_t remote_num_entries_shift, uint32_t remote_data_size)
 {
+  log_debug("in %s", __FUNCTION__);
   uint8_t req[4 + 2 * sizeof(uint32_t)];
-  req[0] = kOpConstruct;
+  req[0] = OpConstruct;
   req[1] = kHashTableDSType;
   req[2] = kDSID;
   req[3] = 2 * sizeof(uint32_t);
   ((uint32_t *)(req + 4))[0] = remote_num_entries_shift;
   ((uint32_t *)(req + 4))[1] = remote_data_size;
   tcp_write_until(conn, req, sizeof(req));
+  uint8_t ack = 0;
+  tcp_read_until(conn, &ack, sizeof(ack));
+  BUG_ON(ack != 1);
   log_info("Initialized remote hashtable");
-
-  uint8_t ack;
-  tcp_write_until(conn, &ack, sizeof(ack));
   return 0;
 }
 
-static int read_object(uint64_t obj_id)
+static int read_object(uint64_t obj_id, void *buf, uint32_t buf_len)
 {
+  log_debug("in %s", __FUNCTION__);
   uint8_t req[3 + sizeof(uint64_t)];
-  req[0] = kOpReadObject;
+  req[0] = OpReadObject;
   req[1] = kDSID;
   req[2] = sizeof(uint64_t);
   *((uint64_t *)(req + 3)) = obj_id;
   tcp_write_until(conn, req, sizeof(req));
   uint16_t data_len = 0;
-  tcp_write_until(conn, &data_len, sizeof(data_len));
-  BUG_ON(data_len != PAGE_SIZE);
-  tcp_write_until(conn, buf, data_len);
+  tcp_read_until(conn, &data_len, sizeof(data_len));
+  // log_info("read object 0x%lx, len=%d", obj_id, data_len);
+  if(data_len) {
+    tcp_read_until(conn, buf, data_len);
+  }
+  if(data_len != PAGE_SIZE) {
+    // log_info("Not found in remote, filling with 'A'...");
+    memset(buf, 'A', PAGE_SIZE);
+  }
   return 0;
 }
 
 static int write_object(uint64_t obj_id)
 {
+  log_debug("in %s", __FUNCTION__);
   // use tcp_buf
-  tcp_buf[0] = kOpWriteObject;
+  tcp_buf[0] = OpWriteObject;
   tcp_buf[1] = kDSID;
   tcp_buf[2] = sizeof(obj_id);
   *((uint16_t *)(tcp_buf + 3)) = PAGE_SIZE;
   *((uint64_t *)(tcp_buf + 5)) = obj_id;
-  __builtin_memcpy(tcp_buf + 9, buf, PAGE_SIZE);
-  tcp_write_until(conn, tcp_buf, 9 + PAGE_SIZE);
+  __builtin_memcpy(tcp_buf + 13, buf, PAGE_SIZE);
+  log_info("Writing object...");
+  tcp_write_until(conn, tcp_buf, 13 + PAGE_SIZE);
   uint8_t ack;
   tcp_read_until(conn, &ack, sizeof(ack));
+  BUG_ON(ack != 1);
+  log_info("write object success");
   return 0;
 }
 
@@ -117,10 +144,19 @@ static inline void *do_mremap(void *old_addr, void *new_addr) {
   return ret;
 }
 
+static inline int do_munmap(void *addr, int length) {
+  return munmap(addr, length);
+}
+
 void pf_handle_routine(thread_t *fault_thread) {
   thread_t *self = thread_self();
   for(;;) {
     assert(preempt_enabled());
+    if(load_acquire(&init_complete) == 0) {
+      // log_info("Waiting for initialization to complete...");
+      thread_yield();
+      continue;
+    }
     void *fault_addr = fault_thread->fault_addr;
     if(fault_addr) {
       // log_info("%p: handling pf @%p for %p", thread_self(), fault_thread->fault_addr, fault_thread);
@@ -130,8 +166,8 @@ void pf_handle_routine(thread_t *fault_thread) {
       if (cache_off >= swap_len) {
         cache_off = 0;
       }
-      // fill page with random, but unique content
-      memset(swap_start + cur_off, 'A' + (cur_off % 26), PAGE_SIZE);
+      // fetch item from remote
+      read_object((uint64_t)fault_addr, swap_start + cur_off, PAGE_SIZE);
       void *new_addr = do_mremap(swap_start + cur_off, fault_addr);
       BUG_ON(new_addr == MAP_FAILED);
       // log_debug("mapped page %p", fault_addr);
@@ -197,36 +233,42 @@ static int str_to_ip(const char *str, uint32_t *addr)
 	return 0;
 }
 
-void do_swap_init_late(void *_arg)
+void do_swap_init_late(uint8_t *_arg)
 {
   struct netaddr laddr, raddr;
   laddr.ip = netcfg.addr;
   laddr.port = 0;
-  str_to_ip("192.168.100.230", &raddr.ip);
+  str_to_ip("192.168.100.57", &raddr.ip);
   raddr.port = 18080;
   
   assert(preempt_enabled());
   log_debug("Doing late swap init...");
   log_debug("Thread is %p", thread_self());
-  BUG_ON(tcp_dial(laddr, raddr, &conn));
+  if(tcp_dial(laddr, raddr, &conn)) {
+    log_warn("Failed to setup connection with memory node.");
+    BUG();
+  }
   log_info("TCP connection established");
 
-  // construct a 64MB hopstoch hash table
-  BUG_ON(construct_remote_hashtable(16, PAGE_SIZE));
+  // construct a 64MB(maximum) hopstoch hash table
+  BUG_ON(construct_remote_hashtable(16, PAGE_SIZE * 256));
 
   // do a little testing
   memset(buf, 'A', sizeof(buf));
   write_object(0x1234);
   memset(buf, 0, sizeof(buf));
-  read_object(0x1234);
+  read_object(0x1234, buf, PAGE_SIZE);
   for(int i = 0; i < PAGE_SIZE; i++) {
     BUG_ON(buf[i] != 'A');
   }
+  log_info("Remote swap test completed.");
+  store_release(&init_complete, 1);
 }
 
 int swap_init_late(void)
 {
   // create a user thread to do init stuff
+  store_release(&init_complete, 0);
   thread_t *th = thread_create(do_swap_init_late, NULL);
   BUG_ON(th == NULL);
   th->typ = THREAD_TYPE_SWAP;
@@ -242,8 +284,35 @@ int swap_init_thread()
 
 int swap_init()
 {
+  // initialize mmap region for swap buffer
   swap_start = mmap(NULL, swap_len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   BUG_ON(swap_start == MAP_FAILED);
-  log_debug("Swap region returned by mmap: %p\n", swap_start);
+  log_info("Swap region returned by mmap: %p", swap_start);
+
+  // initialize memigd
+
+  char buf[64];
+  sprintf(buf, "insmod ./memigd/memigd.ko target_pid=%d", getpid());
+  log_info("Inserting mod: %s", buf);
+  BUG_ON(system(buf));
+
+  // register ourselves
+  // __pid_t pid = getpid();
+  // FILE *pid_file = fopen("/sys/kernel/debug/memigd/pid", "w");
+  // BUG_ON(pid_file == NULL);
+  // fprintf(pid_file, "%d\n", pid);
+  // log_info("Registered to memigd %d", pid);
+  // fclose(pid_file);
+
+  // create shared memory region
+  int smem_fd = open("/sys/kernel/debug/memigd/buffer", O_RDONLY);
+  log_info("smem_fd is %d", smem_fd);
+  BUG_ON(smem_fd < 0);
+  memigd_buffer = mmap(NULL, PAGE_SIZE, PROT_READ, MAP_PRIVATE, smem_fd, 0);
+  BUG_ON(memigd_buffer == MAP_FAILED);
+  log_info("Successfully created shared buffer");
+  // test it
+  log_info("Read from shared buffer: %s\n", memigd_buffer);
+
   return 0;
 }

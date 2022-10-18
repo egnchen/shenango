@@ -9,15 +9,17 @@
 #include <base/log.h>
 #include <bits/sched.h>
 
-#define WRITE_LOG(expr) do { \
-	char buf[64]; \
-	int cpu = sched_getcpu(); \
-	buf[0] = '0' + (cpu / 10); \
-	buf[1] = '0' + (cpu % 10); \
-	buf[2] = ' '; \
-	strcpy(&buf[3], expr); \
-	write(1, buf, strlen(buf)); \
-} while(0)
+// #define WRITE_LOG(expr) do { \
+// 	char buf[64]; \
+// 	int cpu = sched_getcpu(); \
+// 	buf[0] = '0' + (cpu / 10); \
+// 	buf[1] = '0' + (cpu % 10); \
+// 	buf[2] = ' '; \
+// 	strcpy(&buf[3], expr); \
+// 	write(1, buf, strlen(buf)); \
+// } while(0)
+
+#define WRITE_LOG(expr)
 
 #define HOOK3(fnname, retType, argType1, argType2, argType3)                   \
 	retType fnname(argType1 __a1, argType2 __a2, argType3 __a3)            \

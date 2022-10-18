@@ -16,7 +16,7 @@ SPARSE	= sparse
 # MLX5=$(shell lspci | grep 'ConnectX-5' || echo "")
 MLX4=$(shell lspci | grep 'ConnectX-3' || echo "")
 
-DEBUG = 1
+# DEBUG = 1
 
 # comment out to use checksum offload
 CFLAGS += -DNO_IP_CHKSUM_OFFLOAD

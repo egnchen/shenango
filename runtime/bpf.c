@@ -33,8 +33,7 @@ int bpf_init_thread() {
   };
   __u64 key = ((__u64)getpid() << 32) | gettid();
   BUG_ON(bpf_map__update_elem(thread_ctx_map, &key, sizeof(key), &ctx, sizeof(ctx), BPF_ANY));
-	log_info("eBPF registered %llu -> %p", key, ctx.current_thread_ptr);
-  return 0;
+	return 0;
 }
 
 int bpf_init() {
@@ -59,8 +58,7 @@ int bpf_init() {
   ctx.cache_start = swap_start;
   ctx.cache_len = swap_len;
   BUG_ON(bpf_map__update_elem(process_ctx_map, &key, sizeof(key), &ctx, sizeof(ctx), BPF_ANY));
-  log_info("eBPF registered process %lu", key);
-  log_debug("eBPF will ignore %p(length %lx)", ctx.cache_start, ctx.cache_len);
+  log_info("eBPF will ignore %p(length %lx)", ctx.cache_start, ctx.cache_len);
   
   log_info("Successfully installed bpf program");
   return 0;
